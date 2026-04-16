@@ -1,20 +1,45 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Medicard - Электронная медицинская карта
 
-# Run and deploy your AI Studio app
+## Описание проекта
+Medicard - это веб-приложение для ведения электронных медицинских карт. Система позволяет пациентам просматривать свои медицинские документы, а врачам - создавать документы и реквизиты для пациентов.
 
-This contains everything you need to run your app locally.
+## Функционал
+- Регистрация и авторизация пользователей (JWT)
+- Три роли: пациент, врач, администратор
+- Пациент:
+  - Просмотр профиля
+  - Просмотр медицинской карты
+  - Загрузка и просмотр медицинских документов
+  - Просмотр реквизитов (паспорт кардиомонитора, нейростимулятора)
+- Врач:
+  - Поиск пациентов по ИИН, ФИО, email
+  - Создание медицинских документов (с текстом и файлами)
+  - Добавление реквизитов для пациентов
+- Администратор:
+  - Управление пользователями
 
-View your app in AI Studio: https://ai.studio/apps/82736324-36d6-4cd6-b902-bee17fab8c04
+## Технологии
+### Frontend
+- React 18
+- Vite
+- Tailwind CSS
+- React Router DOM
 
-## Run Locally
+### Backend
+- Node.js
+- Express
+- MongoDB + Mongoose
+- JWT для аутентификации
+- bcrypt для хеширования паролей
+- Multer для загрузки файлов
 
-**Prerequisites:**  Node.js
+## Установка и запуск
 
+### Требования
+- Node.js (версия 18 или выше)
+- MongoDB (локально или MongoDB Atlas)
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 1. Клонирование репозитория
+```bash
+git clone <url-репозитория>
+cd Medicard-MongoDB

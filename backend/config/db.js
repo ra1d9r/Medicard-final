@@ -1,24 +1,35 @@
-const { Pool } = require('pg');
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 
-// Настройка подключения к PostgreSQL
-// В реальном проекте данные берутся из .env
-const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'medicard',
-  password: process.env.DB_PASSWORD || 'postgres',
-  port: process.env.DB_PORT || 5432,
-});
+dotenv.config();
 
-// Автоматическое создание таблицы users при запуске (для упрощения)
-pool.query(`
-  CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    iin VARCHAR(12) UNIQUE NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    password VARCHAR(255) NOT NULL
-  )
-`).catch(err => console.error('Ошибка создания таблицы:', err));
+const connectDB = async () => {
+  try {
+    const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/medicard';
+    
+    // Убираем устаревшие опции useNewUrlParser и useUnifiedTopology
+    // Они больше не нужны в Mongoose 7+
+    const options = {
+      serverSelectionTimeoutMS: 5000, // Таймаут выбора сервера
+      socketTimeoutMS: 45000, // Таймаут сокета
+    };
+    
+    await mongoose.connect(uri, options);
+    console.log('✅ Успешное подключение к MongoDB');
+    
+    // Обработка ошибок после подключения
+    mongoose.connection.on('error', (err) => {
+      console.error('❌ Ошибка MongoDB после подключения:', err.message);
+    });
+    
+    mongoose.connection.on('disconnected', () => {
+      console.log('⚠️ MongoDB отключена');
+    });
+    
+  } catch (error) {
+    console.error('❌ Ошибка подключения к MongoDB:', error.message);
+    throw new Error(`Не удалось подключиться к MongoDB: ${error.message}`);
+  }
+};
 
-module.exports = pool;
+export default connectDB;

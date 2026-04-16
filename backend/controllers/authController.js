@@ -1,24 +1,24 @@
-const db = require('../config/db');
-const { findInGovDB } = require('../services/fakeGovDB');
+import User from '../models/User.js';
+import { findInGovDB } from '../services/fakeGovDB.js';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 
 // 1. Проверка ИИН
-exports.checkIin = async (req, res) => {
+export const checkIin = async (req, res) => {
   const { iin } = req.body;
 
   try {
-    // Шаг 1: Ищем пользователя в локальной базе PostgreSQL
-    const dbResult = await db.query('SELECT * FROM users WHERE iin = $1', [iin]);
-    if (dbResult.rows.length > 0) {
+    const existingUser = await User.findOne({ iin });
+    if (existingUser) {
       return res.json({ status: 'registered', message: 'Пользователь уже зарегистрирован' });
     }
 
-    // Шаг 2: Если в локальной БД нет, ищем в государственной базе (fakeGovDB)
     const govUser = findInGovDB(iin);
     if (govUser) {
       return res.json({ status: 'found_in_gov', name: govUser.name });
     }
 
-    // Шаг 3: Если нигде не найден
     return res.status(404).json({ status: 'error', message: 'ИИН не найден' });
   } catch (error) {
     console.error(error);
@@ -27,29 +27,48 @@ exports.checkIin = async (req, res) => {
 };
 
 // 2. Регистрация нового пользователя
-exports.register = async (req, res) => {
+export const register = async (req, res) => {
   const { iin, email, password } = req.body;
 
   try {
-    // Шаг 1: Получаем ФИО строго из гос. базы (пользователь не вводит имя сам)
     const govUser = findInGovDB(iin);
     if (!govUser) {
       return res.status(400).json({ error: 'ИИН не найден в государственной базе' });
     }
 
-    // Шаг 2: Проверяем, не зарегистрирован ли он уже в PostgreSQL
-    const existingUser = await db.query('SELECT * FROM users WHERE iin = $1', [iin]);
-    if (existingUser.rows.length > 0) {
+    const existingUser = await User.findOne({ iin });
+    if (existingUser) {
       return res.status(400).json({ error: 'Пользователь с таким ИИН уже существует' });
     }
 
-    // Шаг 3: Сохраняем пользователя в PostgreSQL (без хэширования пароля для простоты)
-    const newUser = await db.query(
-      'INSERT INTO users (iin, name, email, password) VALUES ($1, $2, $3, $4) RETURNING id, iin, name, email',
-      [iin, govUser.name, email, password]
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newUser = await User.create({
+      iin,
+      name: govUser.name,
+      email,
+      password: hashedPassword,
+      role: 'user'
+    });
+
+    const token = jwt.sign(
+      { userId: newUser._id, iin: newUser.iin },
+      process.env.JWT_SECRET || 'your-secret-key-change-this',
+      { expiresIn: '7d' }
     );
 
-    res.json({ message: 'Регистрация успешна', user: newUser.rows[0] });
+    res.json({
+      message: 'Регистрация успешна',
+      token,
+      user: {
+        id: newUser._id,
+        iin: newUser.iin,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -57,29 +76,61 @@ exports.register = async (req, res) => {
 };
 
 // 3. Вход в систему
-exports.login = async (req, res) => {
+export const login = async (req, res) => {
   const { iin, password } = req.body;
 
   try {
-    // Шаг 1: Ищем пользователя по ИИН
-    const result = await db.query('SELECT * FROM users WHERE iin = $1', [iin]);
-    if (result.rows.length === 0) {
+    const user = await User.findOne({ iin }).select('+password');
+    
+    if (!user) {
       return res.status(401).json({ error: 'Неверный ИИН или пароль' });
     }
 
-    const user = result.rows[0];
+    if (!user.password) {
+      return res.status(401).json({ error: 'Ошибка авторизации' });
+    }
 
-    // Шаг 2: Сверяем пароль (простое сравнение строк)
-    if (user.password !== password) {
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
       return res.status(401).json({ error: 'Неверный ИИН или пароль' });
     }
 
-    // Шаг 3: Успешный вход (возвращаем данные без JWT)
+    const token = jwt.sign(
+      { userId: user._id, iin: user.iin },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
     res.json({
       message: 'Успешный вход',
-      user: { id: user.id, iin: user.iin, name: user.name, email: user.email }
+      token,
+      user: {
+        id: user._id,
+        iin: user.iin,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
     });
   } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+};
+
+// 4. Получение текущего пользователя
+export const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('-password');
+    if (!user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    res.json({ user });
+  } catch (error) {
+    // Обработка CastError (неверный формат ID)
+    if (error instanceof mongoose.Error.CastError) {
+      return res.status(400).json({ error: 'Неверный формат идентификатора пользователя' });
+    }
     console.error(error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
